@@ -1,0 +1,280 @@
+```text
+SYSTEM HEALTH CHECKER
+DESIGN NOTES
+============
+
+
+1. OBJECTIVE
+------------
+
+The objective of this program is to collect basic system health
+metrics such as hostname, CPU usage, memory usage, and disk usage,
+evaluate the collected metrics against predefined thresholds, and
+display an overall system health status.
+
+
+2. PROGRAMMING APPROACH
+-----------------------
+
+Approach:
+Functional decomposition
+
+The program is divided into small functions where each function
+has a single responsibility.
+
+Examples:
+
+get_hostname()  -> returns hostname
+get_cpu()       -> returns CPU usage
+get_memory()    -> returns memory usage
+get_disk()      -> returns disk usage
+get_status()    -> evaluates system health
+print_report()  -> displays the health report
+
+The metric collection functions do not handle presentation.
+They collect and return data, while the reporting function is
+responsible only for displaying the results.
+
+This separation makes the code easier to understand, test,
+modify, and reuse.
+
+
+3. SYSTEM INFORMATION APPROACH
+------------------------------
+
+Two approaches were explored for collecting system information:
+
+1. subprocess
+2. Python-native libraries such as psutil and socket
+
+
+4. APPROACH 1 - SUBPROCESS
+--------------------------
+
+The first implementation used the subprocess module to execute
+Linux commands and parse their output.
+
+Examples:
+
+hostname
+top
+free
+df
+
+For example, CPU usage was collected using:
+
+top -bn1 | awk ...
+
+The pipeline was implemented using subprocess.Popen rather than
+shell=True.
+
+The output from one process was connected to the input of another
+process using subprocess.PIPE.
+
+This helped me understand:
+
+- subprocess.run()
+- subprocess.Popen()
+- stdout
+- stdin
+- subprocess.PIPE
+- process communication
+- command output parsing
+- process exit codes
+
+
+5. APPROACH 2 - PYTHON-NATIVE LIBRARIES
+---------------------------------------
+
+The second implementation replaced external Linux commands with
+Python APIs where suitable.
+
+The following libraries are used:
+
+socket
+    Used to retrieve the hostname.
+
+psutil
+    Used to retrieve CPU, memory, and disk information.
+
+
+6. WHY SOCKET FOR HOSTNAME
+--------------------------
+
+The hostname can be retrieved directly through Python's standard
+library using socket.gethostname().
+
+Using socket avoids starting an external operating-system process
+just to retrieve a value that Python can obtain directly.
+
+This makes the implementation simpler and avoids unnecessary
+command execution.
+
+
+7. WHY PSUTIL
+-------------
+
+psutil provides a Python interface for retrieving system and
+process information.
+
+It allows the program to obtain CPU, memory, and disk information
+without executing operating-system commands and parsing their
+text output.
+
+For example:
+
+psutil.cpu_percent()
+psutil.virtual_memory()
+psutil.disk_usage("/")
+
+This approach provides structured Python values instead of raw
+command output.
+
+
+8. SUBPROCESS VS PSUTIL
+----------------------
+
+subprocess approach:
+
+Advantages:
+- Works directly with existing Linux commands.
+- Useful when no suitable Python API exists.
+- Helps integrate existing system utilities.
+- Provides practical experience with Linux command execution.
+
+Disadvantages:
+- Requires parsing command output.
+- Output format may differ between operating systems or command
+  versions.
+- External commands may not be available in every environment.
+- More process creation overhead.
+- Error handling can become more complicated.
+
+psutil / Python API approach:
+
+Advantages:
+- Returns structured Python data.
+- Less output parsing.
+- Easier to use in application logic.
+- Easier to test.
+- Avoids unnecessary external processes.
+- Better abstraction for system metrics.
+
+Disadvantages:
+- Requires an external Python dependency for psutil.
+- Does not provide an API for every possible operating-system
+  operation.
+
+
+9. FINAL DESIGN DECISION
+------------------------
+
+For metrics where Python provides a suitable API, the Python API
+approach is preferred.
+
+Final implementation:
+
+socket
+    -> hostname
+
+psutil
+    -> CPU usage
+    -> memory usage
+    -> disk usage
+
+subprocess
+    -> retained as a useful technique for cases where a suitable
+       Python API is unavailable or where an existing system
+       command must be integrated.
+
+
+10. ERROR HANDLING
+------------------
+
+The initial implementation uses subprocess with check=True for
+commands where command failure should raise an exception.
+
+The psutil implementation will need appropriate exception handling
+for cases where system information cannot be collected.
+
+Error handling will be improved in the next version.
+
+
+11. DESIGN PATTERNS
+-------------------
+
+No formal design pattern is currently used.
+
+The application is small and does not currently have a problem
+that requires a design pattern.
+
+Introducing patterns at this stage would add unnecessary
+complexity.
+
+The current design relies on separation of responsibilities and
+functional decomposition.
+
+
+12. MODULARITY
+--------------
+
+Each metric is isolated in its own function.
+
+This means that one metric implementation can be changed without
+requiring changes to the other metrics.
+
+For example, CPU collection can be changed from subprocess to
+psutil without changing the status calculation or report
+generation.
+
+
+13. DATA FLOW
+------------
+
+System
+   |
+   +--> get_hostname()
+   |
+   +--> get_cpu()
+   |
+   +--> get_memory()
+   |
+   +--> get_disk()
+             |
+             v
+       get_status()
+             |
+             v
+       print_report()
+
+
+14. TRADE-OFF
+-------------
+
+The subprocess implementation provides useful knowledge about
+Linux commands, process execution, pipes, and command output
+parsing.
+
+However, using subprocess when a reliable Python API already
+exists introduces unnecessary complexity.
+
+The final implementation therefore prefers Python-native APIs for
+system metrics while keeping subprocess knowledge as a fallback
+for operations that require operating-system commands.
+
+
+15. FUTURE IMPROVEMENTS
+-----------------------
+
+Potential improvements include:
+
+- Better exception handling.
+- Unit tests for individual functions.
+- Configurable health thresholds.
+- Command-line arguments.
+- Logging.
+- Support for multiple disks.
+- Support for multiple operating systems.
+- Structured output such as JSON.
+- Separation of configuration from application logic.
+```
