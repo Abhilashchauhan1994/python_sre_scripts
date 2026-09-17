@@ -1,0 +1,533 @@
+# Log Analyzer - Design Document
+
+## 1. Overview
+
+The Log Analyzer is a Python-based utility designed to analyze application log files and generate a summarized report.
+
+The application reads the log file line by line, parses each valid log entry, collects required statistics, and generates a final report containing log-level counts, common error messages, and the time range of errors.
+
+The design focuses on simplicity, modularity, memory efficiency, and separation of responsibilities.
+
+---
+
+## 2. Problem Statement
+
+Application logs can contain thousands or millions of entries, making it difficult to manually identify important information such as the number of errors, frequently occurring error messages, and when errors started and ended.
+
+The Log Analyzer automates this process by processing the log file and generating a structured summary.
+
+---
+
+## 3. Design Goals
+
+The main design goals are:
+
+* Process large log files without loading the entire file into memory.
+* Keep file validation separate from file processing.
+* Parse individual log lines independently.
+* Maintain report statistics while processing the file.
+* Generate the report only after all log entries have been processed.
+* Keep each function responsible for a single logical task.
+* Make the application easy to extend with additional metrics.
+
+---
+
+## 4. Application Flow
+
+The application follows this processing flow:
+
+```
+User Input
+    |
+    v
+Validate File
+    |
+    v
+Read File Line by Line
+    |
+    v
+Parse Log Line
+    |
+    v
+Collect Report Data
+    |
+    v
+Generate Report
+```
+
+The main orchestration function coordinates these steps but does not perform the individual operations itself.
+
+---
+
+## 5. Module Responsibilities
+
+### validate_file()
+
+Responsible for validating the input file before processing begins.
+
+The function verifies:
+
+1. The path exists.
+2. The path points to a file.
+3. The file is not empty.
+
+The application uses `pathlib.Path` for filesystem operations.
+
+Example:
+
+```
+Path(input(...))
+```
+
+Using `Path` instead of raw strings provides a cleaner interface for filesystem operations such as:
+
+```
+exists()
+is_file()
+stat()
+open()
+```
+
+---
+
+### read_file()
+
+Responsible for opening the validated log file and processing it line by line.
+
+The file is opened using:
+
+```
+log_file.open("r")
+```
+
+The application then uses:
+
+```
+for line in file:
+```
+
+This approach is intentional because the complete file is not loaded into memory.
+
+For a large log file, only the current line being processed needs to be in memory.
+
+The function coordinates:
+
+```
+parse_line()
+    |
+    v
+collect_report_data()
+```
+
+It returns the accumulated report data after the complete file has been processed.
+
+---
+
+### parse_line()
+
+Responsible only for parsing an individual log line.
+
+The function uses a compiled regular expression to extract:
+
+* Timestamp
+* Log level
+* Message
+
+Example log entry:
+
+```
+2026-09-16 10:03:10 ERROR Database connection failed
+```
+
+The parser converts this into structured data:
+
+```
+{
+    "timestamp": "2026-09-16 10:03:10",
+    "log_level": "ERROR",
+    "message": "Database connection failed"
+}
+```
+
+Named regular-expression groups are used so that the extracted values have meaningful names.
+
+Example:
+
+```
+(?P<timestamp>...)
+(?P<log_level>...)
+(?P<message>...)
+```
+
+If a line does not match the expected format, the parser returns `None`.
+
+This allows the file-processing function to ignore invalid log lines without stopping the complete analysis.
+
+---
+
+### initialize_report_data()
+
+Responsible for creating the initial data structure used during analysis.
+
+The report data contains counters and state required to generate the final report.
+
+Example:
+
+```
+{
+    "level_count": Counter(),
+    "message_count": Counter(),
+    "error_start": None,
+    "error_end": None
+}
+```
+
+`Counter` is used because the application needs to count repeated log levels and messages efficiently.
+
+---
+
+### collect_report_data()
+
+Responsible for updating report statistics using the parsed log entry.
+
+For every valid log entry, the log level count is updated.
+
+Example:
+
+```
+report_data["level_count"][log_level] += 1
+```
+
+For error messages, the corresponding error counter is updated.
+
+The function also maintains the ERROR time range.
+
+When the first ERROR is encountered:
+
+```
+error_start = timestamp
+```
+
+For every subsequent ERROR:
+
+```
+error_end = timestamp
+```
+
+This works efficiently when the log file is processed chronologically.
+
+The function therefore maintains the application's running state while the file is being processed.
+
+---
+
+### generate_report()
+
+Responsible only for presenting the collected information to the user.
+
+It does not parse the log file or modify the report data.
+
+The report contains:
+
+```
+Log Analyzer
+Log File
+
+Log Levels
+
+Most Common Errors
+
+Error Time Range
+```
+
+Keeping report generation separate from data collection makes it possible to change the output format later without changing the log-processing logic.
+
+For example, the application could later support:
+
+* Terminal output
+* JSON output
+* CSV output
+* HTML reports
+
+without redesigning the parser.
+
+---
+
+## 6. Regular Expression Design
+
+The application uses a compiled regular expression for log parsing.
+
+Example:
+
+```
+r"^(?P<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+"
+r"(?P<log_level>INFO|ERROR|WARN|DEBUG)\s+"
+r"(?P<message>.*)$"
+```
+
+The expression is divided into three logical sections.
+
+### Timestamp
+
+```
+(?P<timestamp>...)
+```
+
+Extracts the date and time.
+
+Expected format:
+
+```
+YYYY-MM-DD HH:MM:SS
+```
+
+### Log Level
+
+```
+(?P<log_level>INFO|ERROR|WARN|DEBUG)
+```
+
+Restricts the recognized log levels to the supported values.
+
+### Message
+
+```
+(?P<message>.*)
+```
+
+Captures the remaining content of the log line as the message.
+
+Named groups make the resulting data easier to work with than positional groups.
+
+---
+
+## 7. Data Processing Strategy
+
+The application uses a streaming-style processing approach.
+
+Instead of doing:
+
+```
+file.read()
+```
+
+or:
+
+```
+file.readlines()
+```
+
+the application uses:
+
+```
+for line in file:
+```
+
+This means the application does not need to store the entire log file in memory.
+
+The processing model is:
+
+```
+Read one line
+    |
+    v
+Parse line
+    |
+    v
+Update counters
+    |
+    v
+Read next line
+```
+
+This makes the approach suitable for larger application logs.
+
+---
+
+## 8. Report Data Design
+
+The report data acts as the state of the analysis.
+
+Example:
+
+```
+{
+    "level_count": Counter({
+        "INFO": 3,
+        "WARN": 2,
+        "ERROR": 3
+    }),
+
+    "message_count": Counter({
+        "Database connection failed": 2,
+        "Retry initiated": 1
+    }),
+
+    "error_start": "2026-09-16 10:03:10",
+
+    "error_end": "2026-09-16 10:04:25"
+}
+```
+
+The data is accumulated during file processing and consumed by `generate_report()` after processing is complete.
+
+---
+
+## 9. Error Time Range
+
+The error time range is calculated while processing the file.
+
+The first ERROR timestamp becomes the start time.
+
+Every subsequent ERROR timestamp becomes the latest error time.
+
+Example:
+
+```
+10:03:10 ERROR Database connection failed
+10:03:25 ERROR Retry initiated
+10:04:25 ERROR Timeout while connecting to database
+```
+
+Result:
+
+```
+Start Time: 10:03:10
+End Time: 10:04:25
+```
+
+This approach avoids storing every ERROR timestamp when only the beginning and end of the error period are required.
+
+The current implementation assumes log entries are processed in chronological order. If logs can arrive out of order, timestamp comparison would be required instead of simply updating the end timestamp.
+
+---
+
+## 10. Separation of Responsibilities
+
+The application follows a single-responsibility approach.
+
+```
+validate_file()
+    File validation
+
+read_file()
+    File processing orchestration
+
+parse_line()
+    Log parsing
+
+initialize_report_data()
+    Report state initialization
+
+collect_report_data()
+    Statistics collection
+
+generate_report()
+    Report presentation
+```
+
+Each function performs one primary responsibility.
+
+This makes individual functions easier to understand, test, and modify.
+
+---
+
+## 11. Why This Design
+
+The design intentionally avoids putting all functionality into one large function.
+
+For example, file validation, parsing, statistics collection, and report generation could technically be implemented inside one loop.
+
+However, that would make the application harder to maintain.
+
+With the current design, a future change to the log format primarily affects the parser.
+
+A future change to the report format primarily affects the report generator.
+
+A future change to the statistics primarily affects the data collection logic.
+
+This reduces the impact of individual changes.
+
+---
+
+## 12. Scalability Considerations
+
+The current implementation is designed to process large log files efficiently from a memory perspective.
+
+The complete file is not loaded into memory.
+
+Memory usage mainly depends on:
+
+* Current log line
+* Parsed log entry
+* Report counters
+* Stored report state
+
+However, the number of unique messages can affect the size of the `Counter`.
+
+For extremely high-cardinality logs, additional strategies could be introduced later, such as:
+
+* Limiting the number of top messages stored.
+* Using external aggregation.
+* Processing logs in batches.
+* Supporting compressed log files.
+* Processing rotated log files.
+* Reading logs from remote systems.
+
+These are intentionally outside the scope of the current implementation.
+
+---
+
+## 13. Future Enhancements
+
+Possible future enhancements include:
+
+* Support additional log formats.
+* Support `WARNING` in addition to `WARN`.
+* Validate timestamps using `datetime`.
+* Report malformed log lines.
+* Add configurable top-N error messages.
+* Add JSON output.
+* Add CSV output.
+* Add HTML report generation.
+* Add command-line arguments using `argparse` or Typer.
+* Add unit tests for each function.
+* Add logging for application-level failures.
+* Support multiple log files.
+* Support compressed `.gz` logs.
+
+---
+
+## 14. Design Summary
+
+The Log Analyzer follows a simple pipeline-based design:
+
+```
+Input
+  |
+  v
+Validation
+  |
+  v
+Streaming File Reader
+  |
+  v
+Log Parser
+  |
+  v
+Data Collector
+  |
+  v
+Report Generator
+```
+
+The key design principles are:
+
+* Single responsibility
+* Streaming file processing
+* Clear separation between parsing and reporting
+* Stateful aggregation using `Counter`
+* `pathlib.Path` for filesystem operations
+* Minimal memory usage
+* Easy extensibility
+
+The implementation is intentionally simple while maintaining a structure that can be extended as additional SRE-oriented log analysis requirements are introduced.

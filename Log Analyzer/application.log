@@ -1,0 +1,8 @@
+2026-09-16 10:00:01 INFO Application started
+2026-09-16 10:01:12 INFO User request received
+2026-09-16 10:02:45 WARN Connection pool usage is high
+2026-09-16 10:03:10 ERROR Database connection failed
+2026-09-16 10:03:15 ERROR Database connection failed
+2026-09-16 10:04:20 INFO Retry initiated
+2026-09-16 10:04:25 ERROR Timeout while connecting to database
+2026-09-16 10:05:10 WARN Memory usage is high
